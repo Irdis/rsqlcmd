@@ -141,7 +141,7 @@ public class Program
         for (int i = 0; i < reader.FieldCount; i++)
         {
             var value = ProcessValue(args, reader.GetValue(i).ToString());
-            Console.WriteLine($"{i + 1}. {value} ");
+            Console.WriteLine($"{i + 1}. {value}");
         }
         Console.WriteLine();
     }
