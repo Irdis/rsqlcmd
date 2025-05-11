@@ -7,6 +7,7 @@ public class RSqlCmdArgs
     public string ConnectionString { get; set; }
     public string File { get; set; }
     public string Script { get; set; }
+    public bool NoNewLines { get; set; }
 }
 
 public class Program
@@ -45,6 +46,11 @@ public class Program
                 res.Script = args[ind];
                 ind++;
             }
+            else if (arg == "-nnl")
+            {
+                ind++;
+                res.NoNewLines = true;
+            }
             else if (arg == "-?")
             {
                 PrintUsage(Console.Out);
@@ -78,6 +84,7 @@ public class Program
         tw.WriteLine("    -c <conn>:   connection string");
         tw.WriteLine("    -f <file>:   file path");
         tw.WriteLine("    -s <script>: raw script");
+        tw.WriteLine("    -nnl:        no new lines");
         tw.WriteLine("    -?:          show this message");
     }
 
@@ -97,7 +104,7 @@ public class Program
             PrintHeader(reader);
             while (await reader.ReadAsync())
             {
-                PrintRow(reader);
+                PrintRow(reader, args);
             }
             if (!(await reader.NextResultAsync()))
                 break;
@@ -129,12 +136,26 @@ public class Program
         Console.WriteLine();
     }
 
-    private static void PrintRow(SqlDataReader reader)
+    private static void PrintRow(SqlDataReader reader, RSqlCmdArgs args)
     {
         for (int i = 0; i < reader.FieldCount; i++)
         {
-            Console.WriteLine($"{i + 1}. {reader.GetValue(i)} ");
+            var value = ProcessValue(args, reader.GetValue(i).ToString());
+            Console.WriteLine($"{i + 1}. {value} ");
         }
         Console.WriteLine();
+    }
+
+    private static string ProcessValue(RSqlCmdArgs args, string value)
+    {
+        if (args.NoNewLines)
+        {
+            var index = value.IndexOf("\r\n");
+            if (index >= 0)
+            {
+                return value.Substring(0, index);
+            }
+        }
+        return value;
     }
 }
