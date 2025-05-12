@@ -136,7 +136,7 @@ public class Program
     {
         var lines = text.Split(new []{'\r', '\n'}, StringSplitOptions.RemoveEmptyEntries);
         var sb = new StringBuilder();
-        foreach(var line in lines)
+        foreach (var line in lines)
         {
            if (_go.Match(line).Success)
            {
@@ -145,8 +145,8 @@ public class Program
                    yield return sb.ToString();
                    sb.Clear();
                }
-           } 
-           else 
+           }
+           else
            {
                sb.AppendLine(line);
            }
