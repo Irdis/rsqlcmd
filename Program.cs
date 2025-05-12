@@ -192,11 +192,16 @@ public class Program
         var str = value.ToString();
         if (args.NoNewLines)
         {
-            var index = str.IndexOf("\r\n");
-            if (index >= 0)
+            var newLineIndex = str.IndexOf("\r\n");
+            if (newLineIndex >= 0)
             {
-                return str.Substring(0, index);
+                str = str.Substring(0, newLineIndex);
             }
+        }
+        var zeroIndex = str.IndexOf('\0');
+        if (zeroIndex >= 0)
+        {
+            str = str.Substring(0, zeroIndex);
         }
         return str;
     }
