@@ -1,4 +1,6 @@
-﻿using Microsoft.Data.SqlClient;
+﻿using System.Text;
+using System.Text.RegularExpressions;
+using Microsoft.Data.SqlClient;
 
 namespace rsqlcmd;
 
@@ -12,6 +14,7 @@ public class RSqlCmdArgs
 
 public class Program
 {
+    public static Regex _go = new Regex(@"^\s*GO\s*;*\s*(--.*)?(\\\*.*)?$", RegexOptions.IgnoreCase);
     public static async Task Main(string[] args)
     {
         if (!ParseArgs(args, out var sqlCmdArgs))
@@ -95,34 +98,68 @@ public class Program
         {
             Console.WriteLine(e.Message);
         };
-        var command = connection.CreateCommand();
-        command.CommandText = GetCommandText(args);
         await connection.OpenAsync();
-        await using var reader = await command.ExecuteReaderAsync();
-        while (true)
+        foreach (var commandText in GetCommandText(args))
         {
-            PrintHeader(reader);
-            while (await reader.ReadAsync())
+            var command = connection.CreateCommand();
+            command.CommandText = commandText;
+            await using var reader = await command.ExecuteReaderAsync();
+            while (true)
             {
-                PrintRow(reader, args);
+                var rowIndex = 1;
+                var hasRows = await reader.ReadAsync();
+                if (hasRows)
+                {
+                    PrintHeader(reader);
+                    PrintRow(rowIndex++, reader, args);
+                }
+                while (await reader.ReadAsync())
+                {
+                    PrintRow(rowIndex++, reader, args);
+                }
+                if (!(await reader.NextResultAsync()))
+                    break;
             }
-            if (!(await reader.NextResultAsync()))
-                break;
         }
     }
 
-    private static string GetCommandText(RSqlCmdArgs args)
+    private static IEnumerable<string> GetCommandText(RSqlCmdArgs args)
     {
         if (args.File != null)
         {
-            return File.ReadAllText(args.File);
+            return ExtractScripts(File.ReadAllText(args.File));
         }
-        return args.Script;
+        return ExtractScripts(args.Script);
+    }
+
+    private static IEnumerable<string> ExtractScripts(string text)
+    {
+        var lines = text.Split(new []{'\r', '\n'}, StringSplitOptions.RemoveEmptyEntries);
+        var sb = new StringBuilder();
+        foreach(var line in lines)
+        {
+           if (_go.Match(line).Success)
+           {
+               if (sb.Length > 0)
+               {
+                   yield return sb.ToString();
+                   sb.Clear();
+               }
+           } 
+           else 
+           {
+               sb.AppendLine(line);
+           }
+        }
+        if (sb.Length > 0)
+        {
+            yield return sb.ToString();
+        }
     }
 
     private static void PrintHeader(SqlDataReader reader)
     {
-        Console.Write("# ");
+        Console.Write("Table cols: ");
         for (int i = 0; i < reader.FieldCount; i++)
         {
             var name = reader.GetName(i);
@@ -136,26 +173,31 @@ public class Program
         Console.WriteLine();
     }
 
-    private static void PrintRow(SqlDataReader reader, RSqlCmdArgs args)
+    private static void PrintRow(int rowIndex, SqlDataReader reader, RSqlCmdArgs args)
     {
+        Console.WriteLine($"Row index #{rowIndex}");
         for (int i = 0; i < reader.FieldCount; i++)
         {
-            var value = ProcessValue(args, reader.GetValue(i).ToString());
-            Console.WriteLine($"{i + 1}. {value}");
+            var val = reader.GetValue(i);
+            var str = ProcessValue(args, val);
+            Console.WriteLine($"{i + 1}. {str}");
         }
         Console.WriteLine();
     }
 
-    private static string ProcessValue(RSqlCmdArgs args, string value)
+    private static string ProcessValue(RSqlCmdArgs args, object value)
     {
+        if (value == DBNull.Value)
+            return "<NULL>";
+        var str = value.ToString();
         if (args.NoNewLines)
         {
-            var index = value.IndexOf("\r\n");
+            var index = str.IndexOf("\r\n");
             if (index >= 0)
             {
-                return value.Substring(0, index);
+                return str.Substring(0, index);
             }
         }
-        return value;
+        return str;
     }
 }
