@@ -107,12 +107,7 @@ public class Program
             while (true)
             {
                 var rowIndex = 1;
-                var hasRows = await reader.ReadAsync();
-                if (hasRows)
-                {
-                    PrintHeader(reader);
-                    PrintRow(rowIndex++, reader, args);
-                }
+                PrintHeader(reader);
                 while (await reader.ReadAsync())
                 {
                     PrintRow(rowIndex++, reader, args);
@@ -159,6 +154,8 @@ public class Program
 
     private static void PrintHeader(SqlDataReader reader)
     {
+        if (reader.FieldCount == 0)
+            return;
         Console.Write("Table cols: ");
         for (int i = 0; i < reader.FieldCount; i++)
         {
