@@ -17,9 +17,19 @@ public class RSqlCmdArgs
 
 public class Program
 {
-    public static Regex _go = new Regex(@"^\s*GO\s*;*\s*(--.*)?(\\\*.*)?$", RegexOptions.IgnoreCase);
     private const string NoNameColumn = "NoName{0}";
     private static readonly int NewLineLength = Environment.NewLine.Length;
+
+    private static Regex _go = new Regex(@"^\s*GO\s*;*\s*(--.*)?(\\\*.*)?$", RegexOptions.IgnoreCase);
+    private static HashSet<string> _sizeDependentTypes = new ([
+        "nchar",
+        "nvarchar",
+        "binary",
+        "varbinary",
+        "nvarchar",
+        "char",
+        "varchar",
+    ]);
 
     public static async Task Main(string[] args)
     {
@@ -111,12 +121,12 @@ public class Program
             Console.WriteLine(e.Message);
         };
         await connection.OpenAsync();
+        var tableIndex = 1;
         foreach (var commandText in GetCommandText(args))
         {
             var command = connection.CreateCommand();
             command.CommandText = commandText;
             await using var reader = await command.ExecuteReaderAsync();
-            var tableIndex = 1;
             while (true)
             {
                 await PrintTable(reader, args, tableIndex);
@@ -141,8 +151,6 @@ public class Program
         var prefix = GenerateInsertPrefix(reader, tableIndex);
         if (prefix == null)
         {
-            Console.WriteLine($"-- table{tableIndex} empty");
-            Console.WriteLine();
             return;
         }
 
@@ -163,6 +171,7 @@ public class Program
             if (rowIndex == maxRowsCount)
             {
                 Console.WriteLine(sb.ToString());
+                Console.WriteLine();
                 sb.Clear();
                 sb.AppendLine(prefix);
                 rowIndex = 0;
@@ -175,8 +184,8 @@ public class Program
             var trimCount = NewLineLength + 1;
             sb.Remove(sb.Length - trimCount, trimCount);
             Console.WriteLine(sb.ToString());
+            Console.WriteLine();
         }
-        Console.WriteLine();
     }
 
     private static void PrintTableDefinition(SqlDataReader reader, int tableIndex)
@@ -197,8 +206,7 @@ public class Program
             sb.Append(GetColumnName(name, ref missingNameCounter));
             sb.Append("] ");
             sb.Append(dataType);
-            if (dataType == "varchar" ||
-                dataType == "nvarchar")
+            if (_sizeDependentTypes.Contains(dataType))
             {
                 sb.Append("(");
                 if (columnSize == int.MaxValue)
@@ -206,8 +214,8 @@ public class Program
                 else
                     sb.Append(columnSize);
                 sb.Append(")");
-            }
-            if (dataType == "decimal")
+            } 
+            else if (dataType == "decimal")
             {
                 var numericPrecision = (Int16)row["NumericPrecision"];
                 var numericScale = (Int16)row["NumericScale"];
@@ -244,16 +252,7 @@ public class Program
         for (int i = 0; i < reader.FieldCount; i++)
         {
             var val = reader.GetValue(i);
-            if (val == DBNull.Value)
-            {
-                sb.AppendFormat("NULL");
-            }
-            else
-            {
-                var str = ProcessValue(args, val);
-                sb.AppendFormat("'{0}'", str);
-            }
-
+            sb.Append(GetLiteralValue(args, val));
             sb.Append(",");
         }
         if (sb[sb.Length - 1] == ',')
@@ -334,6 +333,24 @@ public class Program
         Console.WriteLine();
     }
 
+    private static string GetLiteralValue(RSqlCmdArgs args, object val)
+    {
+        if (val == DBNull.Value)
+        {
+            return "NULL";
+        }
+        var str = ProcessValue(args, val);
+        if (val is int ||
+            val is decimal ||
+            val is short || 
+            val is byte)
+        {
+            return str;
+        }
+        str = str.Replace("'", "''");
+        return "'" + str + "'";
+    }
+
     private static string ProcessValue(RSqlCmdArgs args, object value)
     {
         if (value == DBNull.Value)
@@ -362,6 +379,9 @@ public class Program
 
         if (value is decimal decimalVal)
             return decimalVal.ToString(CultureInfo.InvariantCulture);
+
+        if (value is DateTime dateVal)
+            return dateVal.ToString(CultureInfo.InvariantCulture);
 
         return value.ToString();
     }
